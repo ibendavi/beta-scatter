@@ -219,7 +219,7 @@
 <div class="footer">
     Data: Yahoo Finance &middot; Monthly total returns &middot; Beta via OLS regression vs S&amp;P 500 (SPY)<br>
     Growth of $1: solid line = total return (dividends reinvested); dashed = price only.<br>
-    CAPM parameters: R<sub>f</sub> = 4.5%, Market Risk Premium = 6.0%. For educational use only.
+    CAPM parameters: R<sub>f</sub> = 4.5%, Equity Risk Premium (ERP) = 6.0%. For educational use only.
 </div>
 
 <script>
@@ -227,7 +227,7 @@
    CONFIGURATION
    =================================================================== */
 const CAPM_RF  = 4.5;   // Risk-free rate (% annual)
-const CAPM_MRP = 6.0;   // Market risk premium (% annual)
+const CAPM_ERP = 6.0;   // Equity risk premium (% annual)
 
 const WORKER_URL = '';   // Optional Cloudflare Worker URL
 const CORS_PROXY = 'https://api.allorigins.win/raw?url=';
@@ -407,7 +407,7 @@ function computeAll(dates, spyRet, stockRet, stockPriceRet, spyPriceRet) {
     const stockMaxDD  = maxDrawdown(stockGrowth);
     const spyMaxDD    = maxDrawdown(spyGrowth);
 
-    const capmExpected = CAPM_RF + reg.beta * CAPM_MRP;
+    const capmExpected = CAPM_RF + reg.beta * CAPM_ERP;
     const annAlpha     = stockAnnRet - capmExpected;
     const sharpe       = stockAnnVol > 0 ? (stockAnnRet - CAPM_RF) / stockAnnVol : 0;
     const spySharpe    = spyAnnVol > 0 ? (spyAnnRet - CAPM_RF) / spyAnnVol : 0;
@@ -765,8 +765,8 @@ function showCAPM(ticker, C) {
 
     document.getElementById('capm-box').innerHTML = `
         <div class="formula">
-            <b>CAPM:</b> &nbsp; E[R] = R<sub>f</sub> + &beta; &times; MRP
-            = ${CAPM_RF}% + ${reg.beta.toFixed(2)} &times; ${CAPM_MRP}%
+            <b>CAPM:</b> &nbsp; E[R] = R<sub>f</sub> + &beta; &times; ERP
+            = ${CAPM_RF}% + ${reg.beta.toFixed(2)} &times; ${CAPM_ERP}%
             = <b>${capmExpected.toFixed(1)}%</b> per year
         </div>
         <div style="margin-top:6px;">
