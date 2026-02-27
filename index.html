@@ -1,0 +1,854 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stock Beta Calculator | MBA 6223 Finance</title>
+    <script src="https://cdn.plot.ly/plotly-2.35.0.min.js"></script>
+    <!--
+        DEPLOYMENT: Run build_data.py → host index.html + ticker_data.json on HTTPS.
+        Canvas embed: <iframe src="URL" width="100%" height="1600" style="border:none;"></iframe>
+        Optional: deploy Cloudflare Worker for live ticker lookup (see build_data.py).
+    -->
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+                         Helvetica, Arial, sans-serif;
+            background: #f5f5f5; color: #333;
+        }
+        .header {
+            background: #BB0000; color: white;
+            padding: 14px 24px; text-align: center;
+        }
+        .header h1 { font-size: 1.35rem; font-weight: 700; margin-bottom: 1px; }
+        .header p  { font-size: 0.82rem; opacity: 0.92; }
+
+        .container { max-width: 960px; margin: 0 auto; padding: 20px 16px; }
+
+        /* --- Search + Controls --- */
+        .controls { margin-bottom: 18px; }
+        .search-row { display: flex; gap: 8px; margin-bottom: 10px; }
+        .search-row input {
+            flex: 1; padding: 11px 14px; font-size: 1.05rem;
+            border: 2px solid #ddd; border-radius: 8px; outline: none;
+            text-transform: uppercase;
+        }
+        .search-row input:focus { border-color: #BB0000; }
+        .search-row button {
+            padding: 11px 26px; font-size: 1.05rem; font-weight: 600;
+            background: #BB0000; color: white; border: none; border-radius: 8px;
+            cursor: pointer; white-space: nowrap;
+        }
+        .search-row button:hover { background: #990000; }
+        .search-row button:disabled { background: #bbb; cursor: not-allowed; }
+
+        .slider-row {
+            display: flex; align-items: center; gap: 12px;
+            margin-bottom: 6px;
+        }
+        .slider-row label {
+            font-size: 0.88rem; font-weight: 600; color: #555;
+            white-space: nowrap;
+        }
+        .slider-row input[type=range] {
+            flex: 1; accent-color: #BB0000; height: 6px; cursor: pointer;
+        }
+        .slider-row .slider-val {
+            font-size: 0.88rem; font-weight: 700; color: #BB0000;
+            min-width: 100px; text-align: right;
+        }
+
+        .examples { font-size: 0.82rem; color: #888; }
+        .examples a {
+            color: #BB0000; text-decoration: underline; cursor: pointer; margin: 0 3px;
+        }
+        .examples a:hover { color: #990000; }
+
+        /* --- Loading / Error --- */
+        #loading {
+            text-align: center; padding: 36px; font-size: 1rem; color: #777;
+            display: none;
+        }
+        .spin {
+            display: inline-block; width: 20px; height: 20px;
+            border: 3px solid #ddd; border-top-color: #BB0000;
+            border-radius: 50%; animation: sp .7s linear infinite;
+            vertical-align: middle; margin-right: 8px;
+        }
+        @keyframes sp { to { transform: rotate(360deg); } }
+
+        #error-box {
+            background: #fff3f3; border: 1px solid #f5c6c6; color: #b00;
+            padding: 12px 16px; border-radius: 8px; margin-bottom: 14px;
+            display: none; font-size: 0.92rem;
+        }
+
+        #results { display: none; }
+
+        /* --- Cards --- */
+        .card {
+            background: white; border-radius: 10px;
+            box-shadow: 0 1px 6px rgba(0,0,0,.07); padding: 16px;
+            margin-bottom: 14px;
+        }
+        .card-title {
+            font-size: 0.82rem; font-weight: 700; color: #888;
+            text-transform: uppercase; letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+
+        /* --- Stats grid --- */
+        .stats-row {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px; margin-bottom: 14px;
+        }
+        .stat {
+            background: white; border-radius: 10px;
+            box-shadow: 0 1px 6px rgba(0,0,0,.07);
+            padding: 12px 8px; text-align: center;
+        }
+        .stat .lbl {
+            font-size: 0.68rem; color: #999; text-transform: uppercase;
+            letter-spacing: .4px; margin-bottom: 2px;
+        }
+        .stat .val { font-size: 1.4rem; font-weight: 700; color: #BB0000; }
+        .stat .sub { font-size: 0.67rem; color: #aaa; margin-top: 1px; }
+        .stat.highlight { border: 2px solid #BB0000; }
+        .stat .val.green { color: #1a7a1a; }
+        .stat .val.red   { color: #cc0000; }
+        .stat .val.muted { color: #555; }
+
+        /* --- CAPM callout --- */
+        .capm-box {
+            background: #fdf6f0; border: 1px solid #e8d5c4; border-left: 4px solid #BB0000;
+            border-radius: 8px; padding: 14px 18px; margin-bottom: 14px;
+            font-size: 0.88rem; line-height: 1.6;
+        }
+        .capm-box .formula { font-family: 'Georgia', serif; font-size: 0.95rem; }
+        .capm-box b { color: #BB0000; }
+
+        /* --- Interpretation --- */
+        .interp { font-size: 0.88rem; line-height: 1.55; color: #555; }
+        .interp h3 { font-size: 0.95rem; color: #BB0000; margin-bottom: 6px; }
+
+        /* --- Footer --- */
+        .footer {
+            text-align: center; font-size: 0.7rem; color: #aaa;
+            padding: 12px 16px; line-height: 1.5;
+        }
+
+        /* --- Responsive --- */
+        @media (max-width: 700px) {
+            .stats-row { grid-template-columns: repeat(2, 1fr); }
+            .stat .val { font-size: 1.2rem; }
+        }
+        @media (max-width: 400px) {
+            .stats-row { grid-template-columns: 1fr 1fr; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <h1>Stock Beta Calculator</h1>
+    <p>MBA 6223 Finance &mdash; The Ohio State University</p>
+</div>
+
+<div class="container">
+
+    <div class="controls">
+        <div class="search-row">
+            <input type="text" id="ticker-input"
+                   placeholder="Enter a ticker (e.g., TSLA)"
+                   autocomplete="off" spellcheck="false"
+                   onkeydown="if(event.key==='Enter') runAnalysis()">
+            <button id="go-btn" onclick="runAnalysis()">Analyze</button>
+        </div>
+        <div class="slider-row">
+            <label for="month-slider">Time window:</label>
+            <input type="range" id="month-slider" min="12" max="120" value="60" step="1"
+                   oninput="onSliderChange(this.value)">
+            <span class="slider-val" id="slider-label">60 months (5.0 yr)</span>
+        </div>
+        <div class="examples">
+            Try:
+            <a onclick="go('TSLA')">TSLA</a>
+            <a onclick="go('DUK')">DUK</a>
+            <a onclick="go('AAPL')">AAPL</a>
+            <a onclick="go('XOM')">XOM</a>
+            <a onclick="go('ARKK')">ARKK</a>
+            <a onclick="go('GLD')">GLD</a>
+            <a onclick="go('BND')">BND</a>
+            <a onclick="go('NVDA')">NVDA</a>
+        </div>
+    </div>
+
+    <div id="error-box"></div>
+    <div id="loading"><span class="spin"></span> Fetching data&hellip;</div>
+
+    <div id="results">
+        <!-- 1. Scatter plot -->
+        <div class="card"><div id="chart-scatter"></div></div>
+
+        <!-- 2. Stats cards (8) -->
+        <div class="stats-row" id="stats"></div>
+
+        <!-- 3. CAPM callout -->
+        <div class="capm-box" id="capm-box"></div>
+
+        <!-- 4. Growth of $1 -->
+        <div class="card"><div id="chart-growth"></div></div>
+
+        <!-- 5. Drawdown time series -->
+        <div class="card"><div id="chart-drawdown"></div></div>
+
+        <!-- 6. Return distribution histogram -->
+        <div class="card"><div id="chart-histogram"></div></div>
+
+        <!-- 7. Interpretation -->
+        <div class="card interp" id="interp"></div>
+    </div>
+
+</div>
+
+<div class="footer">
+    Data: Yahoo Finance &middot; Monthly total returns &middot; Beta via OLS regression vs S&amp;P 500 (SPY)<br>
+    Growth of $1: solid line = total return (dividends reinvested); dashed = price only.<br>
+    CAPM parameters: R<sub>f</sub> = 4.5%, Market Risk Premium = 6.0%. For educational use only.
+</div>
+
+<script>
+/* ===================================================================
+   CONFIGURATION
+   =================================================================== */
+const CAPM_RF  = 4.5;   // Risk-free rate (% annual)
+const CAPM_MRP = 6.0;   // Market risk premium (% annual)
+
+const WORKER_URL = '';   // Optional Cloudflare Worker URL
+const CORS_PROXY = 'https://api.allorigins.win/raw?url=';
+const YAHOO = 'https://query1.finance.yahoo.com/v8/finance/chart/';
+
+const SCARLET = '#BB0000';
+const SPY_COLOR = '#4472C4';
+
+/* ===================================================================
+   STATE
+   =================================================================== */
+let localData = null;       // from ticker_data.json
+let spyCache  = null;       // raw SPY data
+let aligned   = null;       // { dates[], spyRet[], stockRet[] } — full aligned series
+let currentTicker = null;
+
+/* ===================================================================
+   LOAD PRE-BUILT DATA
+   =================================================================== */
+(async function() {
+    try {
+        const r = await fetch('ticker_data.json');
+        if (r.ok) {
+            localData = await r.json();
+            console.log(`Local data: ${Object.keys(localData.tickers).length} tickers (${localData.generated})`);
+        }
+    } catch(e) { console.log('No ticker_data.json — live fetch only.'); }
+})();
+
+/* ===================================================================
+   DATA FETCHING
+   =================================================================== */
+async function getReturns(ticker) {
+    if (localData) {
+        if (ticker === 'SPY' && localData.spy) return localData.spy;
+        if (localData.tickers[ticker]) return localData.tickers[ticker];
+    }
+    return liveFetch(ticker);
+}
+
+async function liveFetch(ticker) {
+    let url;
+    if (WORKER_URL) {
+        url = `${WORKER_URL}?t=${encodeURIComponent(ticker)}`;
+    } else {
+        url = CORS_PROXY + encodeURIComponent(
+            `${YAHOO}${encodeURIComponent(ticker)}?range=5y&interval=1mo`);
+    }
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status} for ${ticker}`);
+    const json = await resp.json();
+    if (!json.chart || json.chart.error)
+        throw new Error(json.chart?.error?.description || `No data for ${ticker}`);
+
+    const res = json.chart.result[0];
+    const ts  = res.timestamp || [];
+    const adj = res.indicators.adjclose?.[0]?.adjclose
+             || res.indicators.quote?.[0]?.close || [];
+
+    const dates = [], returns = [];
+    for (let i = 1; i < adj.length; i++) {
+        if (adj[i] != null && adj[i-1] != null && adj[i-1] > 0) {
+            const d = new Date(ts[i] * 1000);
+            dates.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`);
+            returns.push(Math.round((adj[i]/adj[i-1] - 1) * 1e6) / 1e4);
+        }
+    }
+    if (returns.length < 12) throw new Error(`Only ${returns.length} months for ${ticker}`);
+    return { dates, returns };
+}
+
+/* ===================================================================
+   ALIGN DATA
+   =================================================================== */
+function alignSeries(spyData, stockData) {
+    const spyMap = new Map();
+    spyData.dates.forEach((d,i) => spyMap.set(d, { ret: spyData.returns[i], priceRet: spyData.price_returns ? spyData.price_returns[i] : null }));
+
+    const hasPR = stockData.price_returns && stockData.price_returns.length > 0;
+    const dates = [], spyRet = [], stockRet = [], stockPriceRet = [], spyPriceRet = [];
+    stockData.dates.forEach((d,i) => {
+        const spy = spyMap.get(d);
+        if (spy !== undefined && isFinite(spy.ret) && isFinite(stockData.returns[i])) {
+            dates.push(d);
+            spyRet.push(spy.ret);
+            stockRet.push(stockData.returns[i]);
+            if (hasPR) stockPriceRet.push(stockData.price_returns[i]);
+            if (spy.priceRet !== null) spyPriceRet.push(spy.priceRet);
+        }
+    });
+    if (dates.length < 12) throw new Error('Fewer than 12 overlapping months');
+    const result = { dates, spyRet, stockRet };
+    if (hasPR && stockPriceRet.length === dates.length) result.stockPriceRet = stockPriceRet;
+    if (spyPriceRet.length === dates.length) result.spyPriceRet = spyPriceRet;
+    return result;
+}
+
+/* ===================================================================
+   REGRESSION
+   =================================================================== */
+function regress(x, y) {
+    const n = x.length;
+    let sx=0, sy=0, sxy=0, sx2=0;
+    for (let i=0; i<n; i++) { sx+=x[i]; sy+=y[i]; sxy+=x[i]*y[i]; sx2+=x[i]*x[i]; }
+    const beta  = (n*sxy - sx*sy) / (n*sx2 - sx*sx);
+    const alpha = (sy - beta*sx) / n;
+    const my = sy/n;
+    let ssRes=0, ssTot=0;
+    for (let i=0; i<n; i++) { ssRes+=(y[i]-(alpha+beta*x[i]))**2; ssTot+=(y[i]-my)**2; }
+    const r2   = ssTot > 0 ? 1 - ssRes/ssTot : 0;
+    const corr = Math.sqrt(Math.max(0,r2)) * Math.sign(beta);
+    const seB  = Math.sqrt((ssRes/(n-2)) / (sx2 - sx*sx/n));
+    const tStat = beta / seB;
+    return { alpha, beta, r2, corr, n, seB, tStat };
+}
+
+/* ===================================================================
+   GROWTH, DRAWDOWN, STATS
+   =================================================================== */
+function cumulativeGrowth(returns) {
+    // returns in %, output array starting at 1.0
+    const g = [1.0];
+    for (const r of returns) g.push(g[g.length-1] * (1 + r/100));
+    return g;
+}
+
+function drawdownSeries(growth) {
+    const dd = [];
+    let peak = -Infinity;
+    for (const v of growth) {
+        peak = Math.max(peak, v);
+        dd.push((v/peak - 1) * 100);
+    }
+    return dd;
+}
+
+function annualizedReturn(returns) {
+    // returns in %
+    let cum = 1;
+    for (const r of returns) cum *= (1 + r/100);
+    const yrs = returns.length / 12;
+    return (Math.pow(cum, 1/yrs) - 1) * 100;
+}
+
+function annualizedVol(returns) {
+    const n = returns.length;
+    const mean = returns.reduce((a,b) => a+b, 0) / n;
+    const variance = returns.reduce((a,r) => a + (r-mean)**2, 0) / (n-1);
+    return Math.sqrt(variance * 12);
+}
+
+function maxDrawdown(growth) {
+    let peak = -Infinity, worstDD = 0;
+    for (const v of growth) {
+        peak = Math.max(peak, v);
+        worstDD = Math.min(worstDD, (v/peak - 1) * 100);
+    }
+    return worstDD;
+}
+
+/* ===================================================================
+   COMPUTE ALL FROM SLICE
+   =================================================================== */
+function computeAll(dates, spyRet, stockRet, stockPriceRet, spyPriceRet) {
+    const reg = regress(spyRet, stockRet);
+
+    const stockGrowth = cumulativeGrowth(stockRet);
+    const spyGrowth   = cumulativeGrowth(spyRet);
+    const stockDD     = drawdownSeries(stockGrowth);
+    const spyDD       = drawdownSeries(spyGrowth);
+
+    const n = stockRet.length;
+    const stockAnnRet = annualizedReturn(stockRet);
+    const spyAnnRet   = annualizedReturn(spyRet);
+    const stockAnnVol = annualizedVol(stockRet);
+    const spyAnnVol   = annualizedVol(spyRet);
+    const stockMaxDD  = maxDrawdown(stockGrowth);
+    const spyMaxDD    = maxDrawdown(spyGrowth);
+
+    const capmExpected = CAPM_RF + reg.beta * CAPM_MRP;
+    const annAlpha     = stockAnnRet - capmExpected;
+    const sharpe       = stockAnnVol > 0 ? (stockAnnRet - CAPM_RF) / stockAnnVol : 0;
+    const spySharpe    = spyAnnVol > 0 ? (spyAnnRet - CAPM_RF) / spyAnnVol : 0;
+
+    // Price-only growth (if available)
+    let stockPriceGrowth = null, spyPriceGrowth = null, divYield = null;
+    if (stockPriceRet && stockPriceRet.length === n) {
+        stockPriceGrowth = cumulativeGrowth(stockPriceRet);
+        // Dividend yield = annualized avg monthly dividend contribution
+        const avgMonthlyDiv = stockRet.reduce((a,r,i) => a + (r - stockPriceRet[i]), 0) / n;
+        divYield = avgMonthlyDiv * 12;
+    }
+    if (spyPriceRet && spyPriceRet.length === n) {
+        spyPriceGrowth = cumulativeGrowth(spyPriceRet);
+    }
+
+    // Dates for growth/drawdown charts (one extra point at front = "start")
+    const growthDates = ['Start', ...dates];
+
+    return {
+        reg, dates, growthDates,
+        stockGrowth, spyGrowth, stockDD, spyDD,
+        stockPriceGrowth, spyPriceGrowth, divYield,
+        stockAnnRet, spyAnnRet, stockAnnVol, spyAnnVol,
+        stockMaxDD, spyMaxDD,
+        capmExpected, annAlpha, sharpe, spySharpe,
+        stockRet, spyRet,
+    };
+}
+
+/* ===================================================================
+   PLOTTING
+   =================================================================== */
+const plotCfg = { responsive: true, displayModeBar: false };
+
+function plotScatter(ticker, C) {
+    const { reg, stockRet: y2, spyRet: x2 } = C;
+    const xMin = Math.min(...x2) - 2, xMax = Math.max(...x2) + 2;
+
+    const dots = {
+        x: x2, y: y2, mode: 'markers', type: 'scatter',
+        marker: { color: `rgba(187,0,0,0.45)`, size: 9,
+                  line: { color: 'rgba(187,0,0,0.75)', width: 1 } },
+        name: 'Monthly returns',
+        hovertemplate: `SPY: %{x:.1f}%<br>${ticker}: %{y:.1f}%<extra></extra>`,
+    };
+    const line = {
+        x: [xMin, xMax],
+        y: [reg.alpha + reg.beta*xMin, reg.alpha + reg.beta*xMax],
+        mode: 'lines', line: { color: SCARLET, width: 3 },
+        name: `\u03B2 = ${reg.beta.toFixed(2)}`,
+    };
+    const layout = {
+        title: { text: `${ticker} vs S&P 500 \u2014 Monthly Returns`,
+                 font: { size: 15, color: '#333' } },
+        xaxis: { title: 'S&P 500 (SPY) Return (%)',
+                 zeroline: true, zerolinecolor: '#bbb', gridcolor: '#eee' },
+        yaxis: { title: `${ticker} Return (%)`,
+                 zeroline: true, zerolinecolor: '#bbb', gridcolor: '#eee' },
+        showlegend: true,
+        legend: { x:.02, y:.98, bgcolor:'rgba(255,255,255,.85)', bordercolor:'#ddd', borderwidth:1 },
+        margin: { l:56, r:24, t:48, b:52 },
+        plot_bgcolor: '#fafafa', paper_bgcolor: 'white',
+        annotations: [{
+            x:.98, y:.02, xref:'paper', yref:'paper',
+            text: `\u03B2 = ${reg.beta.toFixed(2)}  \u00B7  R\u00B2 = ${(reg.r2*100).toFixed(1)}%  \u00B7  N = ${reg.n}`,
+            showarrow: false, font: { size: 12, color: '#555' },
+            bgcolor:'rgba(255,255,255,.9)', bordercolor:'#ddd', borderwidth:1, borderpad:5,
+            xanchor:'right', yanchor:'bottom',
+        }],
+    };
+    Plotly.newPlot('chart-scatter', [dots, line], layout, plotCfg);
+}
+
+function plotGrowth(ticker, C) {
+    const { growthDates: gd, stockGrowth: sg, spyGrowth: spg, stockPriceGrowth: spg2 } = C;
+    const traces = [];
+
+    const stockTrace = {
+        x: gd, y: sg, mode: 'lines', name: `${ticker} (total return)`,
+        line: { color: SCARLET, width: 2.5 },
+        hovertemplate: `${ticker} total: $%{y:.2f}<extra></extra>`,
+    };
+    traces.push(stockTrace);
+
+    // Price-only line (dashed, lighter) if available
+    if (spg2 && spg2.length === gd.length) {
+        traces.push({
+            x: gd, y: spg2, mode: 'lines', name: `${ticker} (price only)`,
+            line: { color: SCARLET, width: 1.5, dash: 'dash' },
+            opacity: 0.5,
+            hovertemplate: `${ticker} price: $%{y:.2f}<extra></extra>`,
+        });
+    }
+
+    const spyTrace = {
+        x: gd, y: spg, mode: 'lines', name: 'S&P 500',
+        line: { color: SPY_COLOR, width: 2, dash: 'dot' },
+        hovertemplate: 'SPY: $%{y:.2f}<extra></extra>',
+    };
+    traces.push(spyTrace);
+
+    // Annotation showing dividend gap at the end
+    const annotations = [];
+    if (spg2 && spg2.length === gd.length) {
+        const totalEnd = sg[sg.length-1];
+        const priceEnd = spg2[spg2.length-1];
+        const gap = totalEnd - priceEnd;
+        if (gap > 0.02) {
+            annotations.push({
+                x: gd[gd.length-1], y: (totalEnd + priceEnd) / 2,
+                text: `Div: +$${gap.toFixed(2)}`,
+                showarrow: true, arrowhead: 0, arrowcolor: '#999',
+                ax: 45, ay: 0,
+                font: { size: 10, color: '#666' },
+                bgcolor: 'rgba(255,255,255,0.9)', borderpad: 3,
+            });
+        }
+    }
+
+    const layout = {
+        title: { text: 'Growth of $1', font: { size: 15, color: '#333' } },
+        xaxis: { gridcolor: '#eee', tickangle: -45,
+                 tickfont: { size: 10 } },
+        yaxis: { title: 'Value ($)', gridcolor: '#eee',
+                 zeroline: false },
+        showlegend: true,
+        legend: { x:.02, y:.98, bgcolor:'rgba(255,255,255,.85)', bordercolor:'#ddd', borderwidth:1 },
+        margin: { l:56, r:24, t:48, b:60 },
+        plot_bgcolor: '#fafafa', paper_bgcolor: 'white',
+        shapes: [{
+            type: 'line', x0: gd[0], x1: gd[gd.length-1],
+            y0: 1, y1: 1, line: { color: '#aaa', width: 1, dash: 'dash' },
+        }],
+        annotations,
+    };
+    Plotly.newPlot('chart-growth', traces, layout, plotCfg);
+}
+
+function plotDrawdown(ticker, C) {
+    const { growthDates: gd, stockDD, spyDD, stockMaxDD } = C;
+    const stockTrace = {
+        x: gd, y: stockDD, mode: 'lines', name: ticker, fill: 'tozeroy',
+        line: { color: SCARLET, width: 1.5 },
+        fillcolor: 'rgba(187,0,0,0.15)',
+        hovertemplate: `${ticker}: %{y:.1f}%<extra></extra>`,
+    };
+    const spyTrace = {
+        x: gd, y: spyDD, mode: 'lines', name: 'S&P 500',
+        line: { color: SPY_COLOR, width: 1.5, dash: 'dot' },
+        hovertemplate: 'SPY: %{y:.1f}%<extra></extra>',
+    };
+
+    // Find the date of max drawdown
+    let worstIdx = 0;
+    for (let i=1; i<stockDD.length; i++) {
+        if (stockDD[i] < stockDD[worstIdx]) worstIdx = i;
+    }
+
+    const layout = {
+        title: { text: 'Drawdown from Peak', font: { size: 15, color: '#333' } },
+        xaxis: { gridcolor: '#eee', tickangle: -45, tickfont: { size: 10 } },
+        yaxis: { title: 'Drawdown (%)', gridcolor: '#eee',
+                 zeroline: true, zerolinecolor: '#999' },
+        showlegend: true,
+        legend: { x:.02, y:-.15, bgcolor:'rgba(255,255,255,.85)',
+                  bordercolor:'#ddd', borderwidth:1, orientation:'h' },
+        margin: { l:56, r:24, t:48, b:60 },
+        plot_bgcolor: '#fafafa', paper_bgcolor: 'white',
+        height: 280,
+        annotations: stockMaxDD < -5 ? [{
+            x: gd[worstIdx], y: stockDD[worstIdx],
+            text: `Max: ${stockMaxDD.toFixed(1)}%`,
+            showarrow: true, arrowhead: 2, arrowcolor: SCARLET,
+            font: { size: 11, color: SCARLET, weight: 'bold' },
+            bgcolor: 'rgba(255,255,255,0.9)', borderpad: 3,
+        }] : [],
+    };
+    Plotly.newPlot('chart-drawdown', [stockTrace, spyTrace], layout, plotCfg);
+}
+
+function plotHistogram(ticker, C) {
+    const { stockRet, spyRet } = C;
+    // Compute nice bin size (~3% wide)
+    const allVals = [...stockRet, ...spyRet];
+    const lo = Math.floor(Math.min(...allVals)/3)*3 - 3;
+    const hi = Math.ceil(Math.max(...allVals)/3)*3 + 3;
+
+    const stockTrace = {
+        x: stockRet, type: 'histogram', name: ticker,
+        marker: { color: 'rgba(187,0,0,0.5)', line: { color: SCARLET, width: 1 } },
+        xbins: { start: lo, end: hi, size: 3 },
+        hovertemplate: `${ticker}<br>%{x:.0f}% bin: %{y} months<extra></extra>`,
+    };
+    const spyTrace = {
+        x: spyRet, type: 'histogram', name: 'S&P 500',
+        marker: { color: 'rgba(68,114,196,0.35)', line: { color: SPY_COLOR, width: 1 } },
+        xbins: { start: lo, end: hi, size: 3 },
+        hovertemplate: 'SPY<br>%{x:.0f}% bin: %{y} months<extra></extra>',
+    };
+
+    // Mean lines
+    const stockMean = stockRet.reduce((a,b)=>a+b,0) / stockRet.length;
+    const spyMean   = spyRet.reduce((a,b)=>a+b,0) / spyRet.length;
+
+    const layout = {
+        title: { text: 'Distribution of Monthly Returns', font: { size: 15, color: '#333' } },
+        xaxis: { title: 'Monthly Return (%)', gridcolor: '#eee' },
+        yaxis: { title: 'Number of Months', gridcolor: '#eee' },
+        barmode: 'overlay',
+        showlegend: true,
+        legend: { x:.02, y:.98, bgcolor:'rgba(255,255,255,.85)', bordercolor:'#ddd', borderwidth:1 },
+        margin: { l:50, r:24, t:48, b:52 },
+        plot_bgcolor: '#fafafa', paper_bgcolor: 'white',
+        shapes: [
+            { type:'line', x0:stockMean, x1:stockMean, y0:0, y1:1, yref:'paper',
+              line: { color:SCARLET, width:2, dash:'dash' } },
+            { type:'line', x0:spyMean, x1:spyMean, y0:0, y1:1, yref:'paper',
+              line: { color:SPY_COLOR, width:2, dash:'dash' } },
+        ],
+        annotations: [
+            { x: stockMean, y: 1.02, yref:'paper', text: `${ticker} avg: ${stockMean.toFixed(1)}%`,
+              showarrow:false, font:{size:10, color:SCARLET}, xanchor: stockMean > spyMean ? 'left' : 'right' },
+            { x: spyMean, y: 1.06, yref:'paper', text: `SPY avg: ${spyMean.toFixed(1)}%`,
+              showarrow:false, font:{size:10, color:SPY_COLOR}, xanchor: spyMean > stockMean ? 'left' : 'right' },
+        ],
+    };
+    Plotly.newPlot('chart-histogram', [stockTrace, spyTrace], layout, plotCfg);
+}
+
+/* ===================================================================
+   STATS CARDS & CAPM BOX
+   =================================================================== */
+function showStats(ticker, C) {
+    const { reg, stockAnnRet, spyAnnRet, stockAnnVol, spyAnnVol,
+            stockMaxDD, spyMaxDD, capmExpected, annAlpha, sharpe, spySharpe, divYield } = C;
+
+    const fmtPct = (v, dec=1) => `${v >= 0 ? '+':''}${v.toFixed(dec)}%`;
+    const absP   = (v, dec=1) => `${v.toFixed(dec)}%`;
+
+    const retClass  = stockAnnRet >= spyAnnRet ? 'green' : 'red';
+    const ddClass   = Math.abs(stockMaxDD) <= Math.abs(spyMaxDD) ? 'green' : 'red';
+    const alphaClass = annAlpha >= 0 ? 'green' : 'red';
+
+    // Dividend yield card (only if data available)
+    const divCard = divYield !== null ? `
+        <div class="stat">
+            <div class="lbl">Dividend Yield</div>
+            <div class="val">${absP(divYield)}</div>
+            <div class="sub">avg annualized</div>
+        </div>` : '';
+
+    document.getElementById('stats').innerHTML = `
+        <div class="stat">
+            <div class="lbl">Beta (&beta;)</div>
+            <div class="val">${reg.beta.toFixed(2)}</div>
+            <div class="sub">t = ${reg.tStat.toFixed(1)}</div>
+        </div>
+        <div class="stat">
+            <div class="lbl">R-Squared</div>
+            <div class="val">${(reg.r2*100).toFixed(1)}%</div>
+            <div class="sub">mkt explains</div>
+        </div>
+        <div class="stat">
+            <div class="lbl">CAPM E[R]</div>
+            <div class="val muted">${absP(capmExpected)}</div>
+            <div class="sub">per year</div>
+        </div>
+        <div class="stat">
+            <div class="lbl">Actual Return</div>
+            <div class="val ${retClass}">${fmtPct(stockAnnRet)}</div>
+            <div class="sub">SPY: ${fmtPct(spyAnnRet)}</div>
+        </div>
+        <div class="stat">
+            <div class="lbl">Ann. Alpha</div>
+            <div class="val ${alphaClass}">${fmtPct(annAlpha)}</div>
+            <div class="sub">vs CAPM</div>
+        </div>
+        <div class="stat">
+            <div class="lbl">Volatility</div>
+            <div class="val">${absP(stockAnnVol)}</div>
+            <div class="sub">SPY: ${absP(spyAnnVol)}</div>
+        </div>
+        <div class="stat">
+            <div class="lbl">Max Drawdown</div>
+            <div class="val ${ddClass}">${stockMaxDD.toFixed(1)}%</div>
+            <div class="sub">SPY: ${spyMaxDD.toFixed(1)}%</div>
+        </div>
+        <div class="stat">
+            <div class="lbl">Sharpe Ratio</div>
+            <div class="val">${sharpe.toFixed(2)}</div>
+            <div class="sub">SPY: ${spySharpe.toFixed(2)}</div>
+        </div>
+        ${divCard}
+    `;
+}
+
+function showCAPM(ticker, C) {
+    const { reg, capmExpected, stockAnnRet, annAlpha } = C;
+    const sign = annAlpha >= 0 ? '+' : '';
+    const verdict = annAlpha >= 0
+        ? `<b style="color:#1a7a1a">above</b> CAPM prediction`
+        : `<b style="color:#cc0000">below</b> CAPM prediction`;
+
+    document.getElementById('capm-box').innerHTML = `
+        <div class="formula">
+            <b>CAPM:</b> &nbsp; E[R] = R<sub>f</sub> + &beta; &times; MRP
+            = ${CAPM_RF}% + ${reg.beta.toFixed(2)} &times; ${CAPM_MRP}%
+            = <b>${capmExpected.toFixed(1)}%</b> per year
+        </div>
+        <div style="margin-top:6px;">
+            <b>${ticker}</b> actually returned <b>${stockAnnRet.toFixed(1)}%</b>/year
+            &rarr; &alpha; = <b>${sign}${annAlpha.toFixed(1)}%</b>/year (${verdict})
+        </div>
+    `;
+}
+
+/* ===================================================================
+   INTERPRETATION
+   =================================================================== */
+function showInterpretation(ticker, C) {
+    const { reg, stockAnnVol, spyAnnVol, stockMaxDD, spyMaxDD, sharpe, spySharpe } = C;
+    const beta = reg.beta, r2 = reg.r2;
+
+    let betaTxt;
+    const mv = Math.abs(beta*10).toFixed(0);
+    if (beta > 1.5)        betaTxt = `<b>${ticker}</b> is a high-beta stock (&beta; = ${beta.toFixed(2)}). When the market moves 10%, ${ticker} tends to move ~${mv}%. This amplifies both gains and losses.`;
+    else if (beta > 1.05)  betaTxt = `<b>${ticker}</b> is moderately aggressive (&beta; = ${beta.toFixed(2)}). A 10% market swing implies ~${mv}% for ${ticker}.`;
+    else if (beta > 0.95)  betaTxt = `<b>${ticker}</b> moves roughly in line with the market (&beta; &asymp; ${beta.toFixed(2)}).`;
+    else if (beta > 0.5)   betaTxt = `<b>${ticker}</b> is defensive (&beta; = ${beta.toFixed(2)}). A 10% market drop implies only ~${mv}% for ${ticker}.`;
+    else if (beta > 0.05)  betaTxt = `<b>${ticker}</b> has low market sensitivity (&beta; = ${beta.toFixed(2)}), providing strong diversification.`;
+    else if (beta > -0.05) betaTxt = `<b>${ticker}</b> has near-zero beta, essentially uncorrelated with stocks.`;
+    else                   betaTxt = `<b>${ticker}</b> has negative beta (&beta; = ${beta.toFixed(2)}). It tends to <em>rise</em> when stocks fall&mdash;a natural hedge.`;
+
+    const r2pct = (r2*100).toFixed(0);
+    let r2Txt;
+    if (r2 > 0.5)      r2Txt = `R&sup2; = ${r2pct}%: market movements explain most of ${ticker}&rsquo;s returns (systematic risk dominates).`;
+    else if (r2 > 0.2)  r2Txt = `R&sup2; = ${r2pct}%: market explains some variation, but company-specific factors matter a lot.`;
+    else                r2Txt = `R&sup2; = ${r2pct}%: most volatility is idiosyncratic&mdash;diversifiable risk the market doesn&rsquo;t compensate.`;
+
+    let riskTxt = '';
+    if (Math.abs(stockMaxDD) > Math.abs(spyMaxDD) * 1.5)
+        riskTxt = `<br><br><b>Risk warning:</b> ${ticker}&rsquo;s max drawdown (${stockMaxDD.toFixed(1)}%) was far worse than the S&P 500 (${spyMaxDD.toFixed(1)}%). An investor who bought at the peak would need a ${((1/(1+stockMaxDD/100) - 1)*100).toFixed(0)}% gain just to break even.`;
+
+    document.getElementById('interp').innerHTML =
+        `<h3>What This Means</h3><p>${betaTxt}</p><p style="margin-top:8px">${r2Txt}</p>${riskTxt}`;
+}
+
+/* ===================================================================
+   SLIDER
+   =================================================================== */
+function updateSliderLabel(n) {
+    const yrs = (n/12).toFixed(1);
+    document.getElementById('slider-label').textContent = `${n} months (${yrs} yr)`;
+}
+
+function onSliderChange(val) {
+    const n = parseInt(val);
+    updateSliderLabel(n);
+    if (aligned && currentTicker) updateAll(n);
+}
+
+/* ===================================================================
+   UPDATE ALL (called on slider change or initial analysis)
+   =================================================================== */
+function updateAll(nMonths) {
+    const ticker = currentTicker;
+    const total  = aligned.dates.length;
+    const n      = Math.min(nMonths, total);
+
+    // Slice the last n months
+    const dates    = aligned.dates.slice(-n);
+    const spyRet   = aligned.spyRet.slice(-n);
+    const stockRet = aligned.stockRet.slice(-n);
+    const stockPriceRet = aligned.stockPriceRet ? aligned.stockPriceRet.slice(-n) : null;
+    const spyPriceRet   = aligned.spyPriceRet ? aligned.spyPriceRet.slice(-n) : null;
+
+    const C = computeAll(dates, spyRet, stockRet, stockPriceRet, spyPriceRet);
+
+    // Update slider max if data is shorter
+    const slider = document.getElementById('month-slider');
+    slider.max = total;
+    if (parseInt(slider.value) > total) slider.value = total;
+
+    plotScatter(ticker, C);
+    showStats(ticker, C);
+    showCAPM(ticker, C);
+    plotGrowth(ticker, C);
+    plotDrawdown(ticker, C);
+    plotHistogram(ticker, C);
+    showInterpretation(ticker, C);
+}
+
+/* ===================================================================
+   MAIN
+   =================================================================== */
+function go(t) {
+    document.getElementById('ticker-input').value = t;
+    runAnalysis();
+}
+
+async function runAnalysis() {
+    const input  = document.getElementById('ticker-input');
+    const ticker = input.value.trim().toUpperCase();
+    if (!ticker) return;
+    input.value = ticker;
+
+    const btn     = document.getElementById('go-btn');
+    const loading = document.getElementById('loading');
+    const errBox  = document.getElementById('error-box');
+    const results = document.getElementById('results');
+
+    btn.disabled = true;
+    loading.style.display = 'block';
+    errBox.style.display  = 'none';
+    results.style.display = 'none';
+
+    try {
+        const spyPromise  = spyCache ? Promise.resolve(spyCache) : getReturns('SPY');
+        const tickPromise = ticker === 'SPY' ? spyPromise : getReturns(ticker);
+        const [spyData, stockData] = await Promise.all([spyPromise, tickPromise]);
+        spyCache = spyData;
+
+        aligned = alignSeries(spyData, stockData);
+        currentTicker = ticker;
+
+        // Set slider max to available data length
+        const slider = document.getElementById('month-slider');
+        slider.max = aligned.dates.length;
+        const nMonths = Math.min(parseInt(slider.value), aligned.dates.length);
+        slider.value = nMonths;
+        updateSliderLabel(nMonths);
+
+        updateAll(nMonths);
+        results.style.display = 'block';
+
+    } catch (err) {
+        errBox.textContent = `Could not analyze ${ticker}: ${err.message}`;
+        errBox.style.display = 'block';
+    } finally {
+        btn.disabled = false;
+        loading.style.display = 'none';
+    }
+}
+</script>
+</body>
+</html>
